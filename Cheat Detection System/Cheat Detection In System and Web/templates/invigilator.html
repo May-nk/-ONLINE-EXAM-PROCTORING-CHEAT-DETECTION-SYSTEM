@@ -1,0 +1,165 @@
+""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Invigilator Dashboard</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    header {
+      background-color: #1a237e;
+      color: white;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+    }
+    header img {
+      height: 50px;
+      margin-right: 15px;
+    }
+    header h1 {
+      font-size: 22px;
+      margin: 0;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+      padding: 30px;
+      flex-grow: 1;
+    }
+    .student-card {
+      background: white;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      padding: 20px;
+      text-align: center;
+      position: relative;
+    }
+    .student-card img {
+      width: 100%;
+      height: 180px;
+      object-fit: cover;
+      border-radius: 8px;
+      margin-bottom: 10px;
+    }
+    .student-card h3 {
+      margin: 0 0 5px;
+      font-size: 18px;
+      color: #1a237e;
+    }
+    .student-card .id {
+      font-size: 13px;
+      color: #555;
+    }
+    .alerts {
+      margin-top: 10px;
+      color: red;
+      font-size: 14px;
+    }
+    .alerts ul {
+      padding-left: 20px;
+      margin: 0;
+      text-align: left;
+    }
+    .safe {
+      color: green;
+      font-weight: bold;
+    }
+    .blinker {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 15px;
+      height: 15px;
+      background-color: red;
+      border-radius: 50%;
+      animation: blink 1s infinite;
+      display: none;
+    }
+    @keyframes blink {
+      0%, 50%, 100% { opacity: 1; }
+      25%, 75% { opacity: 0; }
+    }
+    footer {
+      background-color: #1a237e;
+      color: white;
+      text-align: center;
+      padding: 10px 0;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <img src="{{ url_for('static', filename='SNPS_Logo.png') }}" alt="University Logo">
+    <h1>Invigilator Monitoring Panel – Sapthagiri NPS University</h1>
+  </header>
+
+  <div class="grid" id="studentGrid">
+    {% for student in students %}
+    <div class="student-card" id="{{ student.id }}">
+      <div class="blinker" id="blink-{{ student.id }}"></div>
+      <h3>{{ student.name }}</h3>
+      <div class="id">ID: {{ student.id }}</div>
+      <img src="{{ student.video_url }}" alt="Live Feed">
+      <div class="alerts">
+        {% if student.alerts %}
+          <strong>⚠️ Alerts:</strong>
+          <ul>
+            {% for alert in student.alerts %}
+              <li>{{ alert }}</li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <div class="safe">✅ No suspicious activity</div>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <footer>
+    © {{ year }} Sapthagiri NPS University | Powered by Online Exam Cheat Detection System
+  </footer>
+
+  <script>
+    const studentBlinkCounts = {};
+
+    function increaseCountAndCheck(id, direction) {
+      if (!studentBlinkCounts[id]) {
+        studentBlinkCounts[id] = { left: 0, right: 0 };
+      }
+      studentBlinkCounts[id][direction]++;
+      if (studentBlinkCounts[id].left + studentBlinkCounts[id].right >= 5) {
+        document.getElementById('blink-' + id).style.display = 'block';
+      }
+    }
+
+    const socket = io();
+    socket.on('cheat_alert', function(data) {
+      const id = data.student_id || 'S001'; // fallback to S001 if not sent
+      const alertBox = document.querySelector(`#${id} .alerts`);
+
+      if (alertBox.querySelector('ul')) {
+        const li = document.createElement('li');
+        li.textContent = `${data.timestamp}: ${data.event}`;
+        alertBox.querySelector('ul').appendChild(li);
+      } else {
+        alertBox.innerHTML = `<strong>⚠️ Alerts:</strong><ul><li>${data.timestamp}: ${data.event}</li></ul>`;
+      }
+
+      if (data.event.includes('LEFT')) increaseCountAndCheck(id, 'left');
+      if (data.event.includes('RIGHT')) increaseCountAndCheck(id, 'right');
+    });
+  </script>
+</body>
+</html>

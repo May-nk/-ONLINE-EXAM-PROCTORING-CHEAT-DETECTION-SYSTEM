@@ -1,50 +1,133 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Eye Movement Detection</title>
+  <meta charset="UTF-8">
+  <title>Online Exam Cheat Detection</title>
   <style>
-    body { font-family: Arial; background: #111; color: #eee; text-align: center; }
-    #video-container { display: inline-block; position: relative; }
-    #status { margin-top: 10px; font-size: 1.1em; }
-    .warning { color: red; font-weight: bold; }
-    #log-box { max-height: 200px; overflow-y: auto; margin-top: 20px; border: 1px solid #666; padding: 10px; background: #222; text-align: left; width: 80%; margin-left: auto; margin-right: auto; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f0f2f5;
+    }
+    header {
+      background-color: #1a237e;
+      color: white;
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+    }
+    header img {
+      height: 50px;
+      margin-right: 15px;
+    }
+    header h1 {
+      font-size: 22px;
+      margin: 0;
+    }
+    .container {
+      max-width: 800px;
+      margin: 40px auto;
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    .video {
+      text-align: center;
+    }
+    .video img {
+      border-radius: 8px;
+      width: 100%;
+      max-width: 600px;
+    }
+    .controls {
+      margin-top: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .controls span {
+      font-weight: bold;
+      color: green;
+      font-size: 18px;
+    }
+    button {
+      padding: 10px 15px;
+      font-size: 14px;
+      background: #1a237e;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-left: 10px;
+    }
+    button:hover {
+      background: #3949ab;
+    }
   </style>
 </head>
 <body>
-  <h1>Eye Movement Detection System</h1>
-  <div id="video-container">
-    <img src="{{ url_for('video_feed') }}" width="640" height="480" />
-  </div>
-  <div id="status">
-    <p>Calibration: <span id="calib-progress">0%</span></p>
-    <p>Direction: <span id="eye-dir">CENTER</span></p>
-    <p>Left Glances: <span id="left-count">0</span></p>
-    <p>Right Glances: <span id="right-count">0</span></p>
-    <p>Sustained Duration: <span id="sustained">0</span>s</p>
-    <p class="warning" id="warning-msg" style="display:none;">WARNING DETECTED!</p>
+
+  <!-- 🔰 Header with Logo -->
+  <header>
+    <img src="{{ url_for('static', filename='SNPS_Logo.png') }}" alt="University Logo">
+    <h1>Online Exam Proctoring – Sapthagiri NPS University</h1>
+  </header>
+
+  <div class="container">
+    <div class="video">
+      <img src="{{ url_for('video_feed') }}" alt="Live Camera Feed">
+    </div>
+
+    <div class="controls">
+      <span>⏳ Time Left: <span id="timer">30:00</span></span>
+      <div>
+        <button onclick="toggleFullscreen()">📺 Fullscreen Mode</button>
+        <button onclick="downloadReport()">📄 Download Report</button>
+      </div>
+    </div>
   </div>
 
-  <div id="log-box"><h3>Recent Events:</h3><div id="event-log"></div></div>
-
+  <!-- ⏲️ Timer & Fullscreen Scripts -->
   <script>
-    async function updateStatus() {
-      const res = await fetch('/status');
-      const data = await res.json();
+    let totalSeconds = 30 * 60;
 
-      document.getElementById('calib-progress').textContent = (data.calibration_progress * 100).toFixed(0) + '%';
-      document.getElementById('eye-dir').textContent = data.eye_direction;
-      document.getElementById('left-count').textContent = data.left_glances;
-      document.getElementById('right-count').textContent = data.right_glances;
-      document.getElementById('sustained').textContent = data.sustained_duration;
-      document.getElementById('warning-msg').style.display = data.warning_active ? 'block' : 'none';
+    function updateTimer() {
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      document.getElementById("timer").innerText = 
+        String(minutes).padStart(2, '0') + ":" + String(seconds).padStart(2, '0');
+      
+      if (totalSeconds > 0) {
+        totalSeconds--;
+        setTimeout(updateTimer, 1000);
+      } else {
+        alert("⏰ Time's up! Auto-submitting exam...");
+        fetch('/timer_expired');
+      }
+    }
+    updateTimer();
 
-      const logDiv = document.getElementById('event-log');
-      logDiv.innerHTML = data.events.map(e => `<p>${e}</p>`).join('');
-      logDiv.scrollTop = logDiv.scrollHeight;
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+      } else {
+        document.exitFullscreen();
+      }
     }
 
-    setInterval(updateStatus, 500);
+    function downloadReport() {
+      window.location.href = "/download_report";
+    }
+
+    // 🧠 Detect tab switch
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        fetch("/log_tab_switch", { method: "POST" });
+      }
+    });
   </script>
+
 </body>
 </html>

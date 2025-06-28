@@ -1,214 +1,124 @@
-import cv2
-import mediapipe as mp
+import os
+import csv
 import time
+import cv2
 import platform
 import threading
-from flask import Flask, render_template, jsonify, Response
+import mediapipe as mp
+from flask import Flask, render_template, jsonify, Response, request, send_file
 
 app = Flask(__name__)
 
-# Beep sound
-def beep():
-    if platform.system() == 'Windows':
-        import winsound
-        winsound.Beep(1000, 200)
-    else:
-        print('\a')
-
-def continuous_beep(duration_sec=3):
-    end_time = time.time() + duration_sec
-    while time.time() < end_time:
-        beep()
-        time.sleep(0.3)
-
-# Logging
-LOG_FILE = "eye_movement_log.txt"
+# ✅ Logging Setup
+LOG_FILE = "cheat_logs.txt"
 event_log = []
 
-def log_event(text):
+
+# ✅ Eye direction counters
+LEFT_COUNT = 0
+RIGHT_COUNT = 0
+CHEAT_FLAGGED = False
+
+# ✅ Simulated Student Data (For Invigilator Panel Demo)
+student_sessions = [
+    {
+        "name": "Student A",
+        "id": "stu001",
+        "video_url": "/video_feed",  # Reusing the same camera feed
+        "alerts": ["Face Missing", "Tab Switch"]
+    },
+    {
+        "name": "Student B",
+        "id": "stu002",
+        "video_url": "/video_feed",
+        "alerts": ["Looking Away"]
+    },
+    {
+        "name": "Student C",
+        "id": "stu003",
+        "video_url": "/video_feed",
+        "alerts": []
+    }
+]
+
+def log_event(event_type, message):
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    entry = f"[{timestamp}] {text}"
+    entry = f"[{timestamp}] [{event_type}] {message}"
     event_log.append(entry)
     if len(event_log) > 100:
         event_log.pop(0)
-    with open(LOG_FILE, "a") as f:
-        f.write(entry + "\n")
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(entry + "\n")  # ✅ Correct newline for Windows
 
-# MediaPipe
+
+
+# ✅ MediaPipe Setup
 mp_face_mesh = mp.solutions.face_mesh
+face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1, refine_landmarks=True)
 
-# Landmarks
-LEFT_IRIS = 468
-RIGHT_IRIS = 473
-LEFT_EYE_LEFT = 33
-LEFT_EYE_RIGHT = 133
-RIGHT_EYE_LEFT = 362
-RIGHT_EYE_RIGHT = 263
+# ✅ Webcam Frame Generator
 
-# Params
-GLANCE_LIMIT = 5
-SUSTAINED_DURATION_THRESHOLD = 4
-CALIBRATION_DURATION = 3.0
-
-# State
-neutral_left = 0.5
-neutral_right = 0.5
-calibration_data = []
-calibration_start_time = time.time()
-
-status = {
-    "eye_direction": "CENTER",
-    "left_glances": 0,
-    "right_glances": 0,
-    "sustained_duration": 0,
-    "warning_active": False,
-    "calibrated": False,
-    "calibration_progress": 0,
-    "events": [],
-}
-
-def get_relative_iris_pos(iris_x, eye_left_x, eye_right_x):
-    eye_width = eye_right_x - eye_left_x
-    return (iris_x - eye_left_x) / eye_width if eye_width else 0.5
-
-def determine_eye_direction(relative_pos, neutral):
-    if relative_pos < neutral - 0.12:
-        return "LEFT"
-    elif relative_pos > neutral + 0.12:
-        return "RIGHT"
-    return "CENTER"
-
+# ✅ Webcam Frame Generator (with cooldown logic)
 def generate_frames():
-    global calibration_start_time, neutral_left, neutral_right, calibration_data
-    last_eye_direction = "CENTER"
-    last_count_time = time.time()
-    sustained_start_time = None
-    left_count = 0
-    right_count = 0
-    warning_active = False
-    calibrated = False
+    global LEFT_COUNT, RIGHT_COUNT, CHEAT_FLAGGED
 
     cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        print("Camera not accessible")
-        return
-
-    face_mesh = mp_face_mesh.FaceMesh(refine_landmarks=True)
+    prev_direction = None
+    cooldown_frames = 0
 
     try:
         while True:
-            ret, frame = cap.read()
-            if not ret:
+            success, frame = cap.read()
+            if not success:
                 break
 
-            frame = cv2.flip(frame, 1)
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = face_mesh.process(rgb)
-            current_time = time.time()
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = face_mesh.process(frame_rgb)
 
-            sustained_duration = 0
-            eye_direction = "CENTER"
-
-            if results.multi_face_landmarks:
-                landmarks = results.multi_face_landmarks[0].landmark
-
-                left_iris_x = landmarks[LEFT_IRIS].x
-                right_iris_x = landmarks[RIGHT_IRIS].x
-                left_eye_left_x = landmarks[LEFT_EYE_LEFT].x
-                left_eye_right_x = landmarks[LEFT_EYE_RIGHT].x
-                right_eye_left_x = landmarks[RIGHT_EYE_LEFT].x
-                right_eye_right_x = landmarks[RIGHT_EYE_RIGHT].x
-
-                rel_left = get_relative_iris_pos(left_iris_x, left_eye_left_x, left_eye_right_x)
-                rel_right = get_relative_iris_pos(right_iris_x, right_eye_left_x, right_eye_right_x)
-
-                if not calibrated:
-                    calibration_data.append((rel_left, rel_right))
-                    elapsed = current_time - calibration_start_time
-                    status["calibration_progress"] = min(elapsed / CALIBRATION_DURATION, 1.0)
-                    cv2.putText(frame, f"Calibrating... {int(CALIBRATION_DURATION - elapsed)}s", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
-                    if elapsed >= CALIBRATION_DURATION:
-                        neutral_left = sum(x[0] for x in calibration_data) / len(calibration_data)
-                        neutral_right = sum(x[1] for x in calibration_data) / len(calibration_data)
-                        calibrated = True
-                        status["calibrated"] = True
-                        log_event("Calibration complete.")
-                else:
-                    left_eye_dir = determine_eye_direction(rel_left, neutral_left)
-                    right_eye_dir = determine_eye_direction(rel_right, neutral_right)
-
-                    if left_eye_dir == "LEFT" or right_eye_dir == "LEFT":
-                        eye_direction = "LEFT"
-                    elif left_eye_dir == "RIGHT" or right_eye_dir == "RIGHT":
-                        eye_direction = "RIGHT"
-
-                    # Sustained detection
-                    if eye_direction in ("LEFT", "RIGHT"):
-                        if eye_direction == last_eye_direction:
-                            if sustained_start_time is None:
-                                sustained_start_time = current_time
-                            sustained_duration = current_time - sustained_start_time
-                        else:
-                            sustained_start_time = current_time
-                            sustained_duration = 0
-                    else:
-                        sustained_start_time = None
-                        sustained_duration = 0
-
-                    # Glance detection
-                    if eye_direction != last_eye_direction and eye_direction in ("LEFT", "RIGHT") and (current_time - last_count_time > 1):
-                        if eye_direction == "LEFT":
-                            left_count += 1
-                            log_event(f"Left glance #{left_count}")
-                        elif eye_direction == "RIGHT":
-                            right_count += 1
-                            log_event(f"Right glance #{right_count}")
-                        last_count_time = current_time
-
-                    # Trigger warning for 5 glances
-                    if (left_count >= GLANCE_LIMIT or right_count >= GLANCE_LIMIT) and not warning_active:
-                        warning_active = True
-                        direction = "LEFT" if left_count >= GLANCE_LIMIT else "RIGHT"
-                        log_event(f"WARNING: {direction} glance threshold exceeded!")
-                        threading.Thread(target=continuous_beep, args=(3,), daemon=True).start()
-                        left_count = 0
-                        right_count = 0
-                        threading.Thread(target=lambda: (time.sleep(3), setattr(status, 'warning_active', False)), daemon=True).start()
-
-                    last_eye_direction = eye_direction
-
-                    if sustained_duration >= SUSTAINED_DURATION_THRESHOLD:
-                        log_event(f"WARNING: Sustained {eye_direction} gaze for {int(sustained_duration)}s")
-                        sustained_start_time = None
-                        sustained_duration = 0
-
-                    # Draw overlays
-                    y = 40
-                    cv2.putText(frame, f"Dir: {eye_direction}", (30, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
-                    cv2.putText(frame, f"L: {left_count}/5  R: {right_count}/5", (30, y + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
-                    if sustained_start_time:
-                        cv2.putText(frame, f"Sustained: {int(sustained_duration)}s", (30, y + 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 200, 200), 2)
-
-                    if warning_active:
-                        cv2.putText(frame, "WARNING!", (30, y + 120), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                        cv2.rectangle(frame, (0, 0), (frame.shape[1], frame.shape[0]), (0, 0, 255), 8)
-
-                    status.update({
-                        "eye_direction": eye_direction,
-                        "left_glances": left_count,
-                        "right_glances": right_count,
-                        "sustained_duration": int(sustained_duration),
-                        "warning_active": warning_active,
-                        "events": event_log[-10:]
-                    })
+            if not results.multi_face_landmarks:
+                log_event("Face Missing", "Face not detected in the frame.")
+                prev_direction = None
+                cooldown_frames = 0
             else:
-                cv2.putText(frame, "No face detected", (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                for face_landmarks in results.multi_face_landmarks:
+                    left_eye_x = face_landmarks.landmark[33].x
+                    right_eye_x = face_landmarks.landmark[263].x
+                    nose_x = face_landmarks.landmark[1].x
 
+                    direction = None
+                    if left_eye_x < nose_x - 0.03:
+                        direction = "LEFT"
+                    elif right_eye_x > nose_x + 0.03:
+                        direction = "RIGHT"
+
+                    if cooldown_frames == 0 and direction and direction != prev_direction:
+                        if direction == "LEFT":
+                            LEFT_COUNT += 1
+                            log_event("Quick eye glance: LEFT", f"Left Count = {LEFT_COUNT}")
+                        elif direction == "RIGHT":
+                            RIGHT_COUNT += 1
+                            log_event("Quick eye glance: RIGHT", f"Right Count = {RIGHT_COUNT}")
+
+                        prev_direction = direction
+                        cooldown_frames = 15  # Wait 15 frames before next valid count
+
+                    if cooldown_frames > 0:
+                        cooldown_frames -= 1
+
+                    if LEFT_COUNT + RIGHT_COUNT >= 5 and not CHEAT_FLAGGED:
+                        CHEAT_FLAGGED = True
+                        log_event("DEBUG", "Frame processed")
+
+
+            # Frame encoding
             ret, buffer = cv2.imencode('.jpg', frame)
+            frame = buffer.tobytes()
             yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
     finally:
         cap.release()
+
+# 🌐 Flask Routes
 
 @app.route('/')
 def index():
@@ -220,7 +130,56 @@ def video_feed():
 
 @app.route('/status')
 def get_status():
-    return jsonify(status)
+    return jsonify({"status": "Running", "alerts": event_log[-5:]})
 
+@app.route('/log_tab_switch', methods=['POST'])
+def log_tab_switch():
+    log_event("Tab Switch", "User switched window or lost browser focus.")
+    return '', 204
+
+@app.route('/timer_expired')
+def timer_expired():
+    log_event("Timer Ended", "Exam duration completed.")
+    return jsonify({"message": "Timer expired logged."})
+
+@app.route('/invigilator')
+def invigilator_dashboard():
+    return render_template('invigilator.html', students=student_sessions)
+
+# ✅ Report Download (CSV) — Windows-safe
+@app.route('/download_report')
+def download_report():
+    csv_file = "cheat_report.csv"
+
+    with open(LOG_FILE, "r") as log_file, open(csv_file, "w", newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(["Timestamp", "Event Type", "Description"])
+        for line in log_file:
+            try:
+                if "] [" in line:
+                    parts = line.strip().split("] [")
+                    timestamp = parts[0].replace("[", "")
+                    event_type, message = parts[1].split("] ")
+                    writer.writerow([timestamp, event_type.strip(), message.strip()])
+                else:
+                    writer.writerow([line.strip()])
+            except:
+                pass
+
+    response = send_file(csv_file, as_attachment=True)
+
+    def delayed_delete(path):
+        def delete():
+            time.sleep(2)
+            try:
+                os.remove(path)
+            except Exception as e:
+                print(f"Failed to delete file: {e}")
+        threading.Thread(target=delete).start()
+
+    delayed_delete(csv_file)
+    return response
+
+# 🚀 Run the app
 if __name__ == '__main__':
     app.run(debug=True, use_reloader=False)
