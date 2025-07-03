@@ -16,9 +16,11 @@
       padding: 10px 20px;
       display: flex;
       align-items: center;
+      justify-content: space-between;
+      
     }
     header img {
-      height: 50px;
+      height: 60px;
       margin-right: 15px;
     }
     header h1 {
@@ -65,13 +67,14 @@
     button:hover {
       background: #3949ab;
     }
+ 
   </style>
 </head>
 <body>
 
   <!-- 🔰 Header with Logo -->
   <header>
-    <img src="{{ url_for('static', filename='SNPS_Logo.png') }}" alt="University Logo">
+    <img src="{{ url_for('static', filename='SNPSU_logo2.png') }}" alt="University Logo">
     <h1>Online Exam Proctoring – Sapthagiri NPS University</h1>
   </header>
 
@@ -87,47 +90,78 @@
         <button onclick="downloadReport()">📄 Download Report</button>
       </div>
     </div>
+
+  
+
   </div>
 
-  <!-- ⏲️ Timer & Fullscreen Scripts -->
-  <script>
-    let totalSeconds = 30 * 60;
+<script>
+  // 👁️ Camera Access
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.width = 320;
+  video.height = 240;
+  document.body.appendChild(video);
 
-    function updateTimer() {
-      const minutes = Math.floor(totalSeconds / 60);
-      const seconds = totalSeconds % 60;
-      document.getElementById("timer").innerText = 
-        String(minutes).padStart(2, '0') + ":" + String(seconds).padStart(2, '0');
-      
-      if (totalSeconds > 0) {
-        totalSeconds--;
-        setTimeout(updateTimer, 1000);
-      } else {
-        alert("⏰ Time's up! Auto-submitting exam...");
-        fetch('/timer_expired');
-      }
-    }
-    updateTimer();
-
-    function toggleFullscreen() {
-      if (!document.fullscreenElement) {
-        document.documentElement.requestFullscreen();
-      } else {
-        document.exitFullscreen();
-      }
-    }
-
-    function downloadReport() {
-      window.location.href = "/download_report";
-    }
-
-    // 🧠 Detect tab switch
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) {
-        fetch("/log_tab_switch", { method: "POST" });
-      }
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then((stream) => {
+      video.srcObject = stream;
+    })
+    .catch((error) => {
+      console.error("Camera access denied:", error);
+      logCheatEvent("Camera Blocked", "Student blocked or denied webcam access");
     });
-  </script>
+
+  // 🚨 Log cheat events to Flask server
+  function logCheatEvent(eventType, message) {
+    fetch('/log_event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventType, message })
+    });
+  }
+
+  // 🔄 Tab switch detection
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      logCheatEvent("Tab Switch", "Student switched tab or minimized browser");
+    }
+  });
+
+  // ⏳ Timer logic
+  let totalSeconds = 30 * 60;
+
+  function updateTimer() {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    document.getElementById("timer").innerText =
+      String(minutes).padStart(2, '0') + ":" + String(seconds).padStart(2, '0');
+
+    if (totalSeconds > 0) {
+      totalSeconds--;
+      setTimeout(updateTimer, 1000);
+    } else {
+      alert("⏰ Time's up! Auto-submitting exam...");
+      fetch('/timer_expired');
+    }
+  }
+  updateTimer();
+
+  // 🔳 Fullscreen Toggle
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  // 📥 Report Download
+  function downloadReport() {
+    window.location.href = "/download_report";
+  }
+</script>
+
 
 </body>
 </html>

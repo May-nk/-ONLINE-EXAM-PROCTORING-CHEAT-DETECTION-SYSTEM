@@ -50,7 +50,7 @@ def log_event(event_type, message):
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(entry + "\n")  # ✅ Correct newline for Windows
 
-
+ 
 
 # ✅ MediaPipe Setup
 mp_face_mesh = mp.solutions.face_mesh
@@ -142,6 +142,20 @@ def timer_expired():
     log_event("Timer Ended", "Exam duration completed.")
     return jsonify({"message": "Timer expired logged."})
 
+@app.route('/log')
+def view_log():
+    with open("cheat_logs.txt", "r") as f:
+        return "<pre>" + f.read() + "</pre>"
+    
+
+@app.route('/log_event', methods=['POST'])
+def log_from_client():
+    data = request.get_json()
+    log_event(data['eventType'], data['message'])
+    return '', 204
+
+
+
 @app.route('/invigilator')
 def invigilator_dashboard():
     return render_template('invigilator.html', students=student_sessions)
@@ -181,5 +195,7 @@ def download_report():
     return response
 
 # 🚀 Run the app
-if __name__ == '__main__':
-    app.run(debug=True, use_reloader=False)
+app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)
+
+print("Flask app running at: http://:5000/ (or your IP)")
+
