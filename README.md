@@ -2,7 +2,7 @@
 
 An AI-powered proctoring tool designed for online examinations. It detects cheating behavior through real-time webcam monitoring, gaze tracking, tab switch alerts, and provides an invigilator dashboard for live monitoring.
 
-![University Logo](/Cheat Detection In System and Web/static/SNPSU_logo2.png)
+
 
 ---
 
