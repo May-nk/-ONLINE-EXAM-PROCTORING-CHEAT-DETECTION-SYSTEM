@@ -2,7 +2,7 @@
 
 An AI-powered proctoring tool designed for online examinations. It detects cheating behavior through real-time webcam monitoring, gaze tracking, tab switch alerts, and provides an invigilator dashboard for live monitoring.
 
-![University Logo](static/SNPSU_logo2.png)
+![University Logo](/Cheat Detection In System and Web/static/SNPSU_logo2.png)
 
 ---
 
@@ -117,7 +117,7 @@ This tool is built for educational and demonstration purposes. Deployment in rea
 **Mayank**
 B.Tech CSE @ Sapthagiri NPS University
 GitHub: [@May-nk](https://github.com/May-nk)
-Email: [your-email@example.com](mailto:your-email@example.com)
+Email: [your-email@example.com](mailto:rajwork006@gmail.com)
 
 ---
 
