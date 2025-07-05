@@ -117,7 +117,7 @@ This tool is built for educational and demonstration purposes. Deployment in rea
 **Mayank**
 B.Tech CSE @ Sapthagiri NPS University
 GitHub: [@May-nk](https://github.com/May-nk)
-Email: [your-email@example.com](mailto:rajwork006@gmail.com)
+Email: rajwork006@gmail.com 
 
 ---
 
